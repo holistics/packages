@@ -1,10 +1,11 @@
-import Chrono from 'chrono-node';
 import dateStructFromDate from '../helpers/dateStructFromDate';
 import truncateDateStruct from '../helpers/truncateDateStruct';
 import momentFromStruct from '../helpers/momentFromStruct';
 import chronoDateStructFromMoment from '../helpers/chronoDateStructFromMoment';
+import { DATE_UNIT_LEVELS } from '../constants';
+import offsetTimezoneForJSDate from '../helpers/offsetTimezoneForJSDate';
 
-const parser = new Chrono.Parser();
+const parser = {};
 
 parser.pattern = () => {
   /* eslint-disable-next-line max-len */
@@ -12,22 +13,29 @@ parser.pattern = () => {
 };
 
 /**
- * @param {String} text
- * @param {Date} ref
+ * @param {Chrono.ParsingContext} context
  * @param {Array} match
  */
-parser.extract = (text, ref, match, opt) => {
+parser.extract = (context, match) => {
   const exact = !!match[1];
   const dateUnit = match[3].toLowerCase();
   const isPast = match[4] !== 'from now';
   const value = parseInt(match[2]) * (isPast ? -1 : 1);
   const duration = match[5];
 
-  let refDateStruct = dateStructFromDate(ref);
+  // hour level and above is affected by DST, using UTC is much simpler
+  const shouldUseUTC = DATE_UNIT_LEVELS[dateUnit] >= DATE_UNIT_LEVELS.hour;
+
+  let refDate = context.reference.instant;
+  if (!shouldUseUTC) {
+    refDate = offsetTimezoneForJSDate(refDate, context.option.timezone);
+  }
+
+  let refDateStruct = dateStructFromDate(refDate);
   if (!exact) {
     refDateStruct = truncateDateStruct(refDateStruct, dateUnit);
   }
-  let startMoment = momentFromStruct(refDateStruct, { weekStartDay: opt.weekStartDay });
+  let startMoment = momentFromStruct(refDateStruct, { weekStartDay: context.option.weekStartDay });
   startMoment = startMoment.add(value, dateUnit);
 
   let endMoment = startMoment.clone();
@@ -40,14 +48,20 @@ parser.extract = (text, ref, match, opt) => {
     endMoment = endMoment.add(1, dateUnit);
   }
 
-  return new Chrono.ParsedResult({
-    ref,
-    text: match[0],
-    tags: { xAgoParser: true },
-    index: match.index,
-    start: chronoDateStructFromMoment(startMoment),
-    end: chronoDateStructFromMoment(endMoment),
-  });
+  const chronoStart = chronoDateStructFromMoment(startMoment);
+  const chronoEnd = chronoDateStructFromMoment(endMoment);
+
+  if (shouldUseUTC) {
+    chronoStart.timezoneOffset = 0;
+    chronoEnd.timezoneOffset = 0;
+  }
+
+  return context.createParsingResult(
+    match.index,
+    match[0],
+    chronoStart,
+    chronoEnd,
+  );
 };
 
 export default parser;

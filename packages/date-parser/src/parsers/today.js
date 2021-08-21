@@ -1,21 +1,20 @@
-import Chrono from 'chrono-node';
 import dateStructFromDate from '../helpers/dateStructFromDate';
 import momentFromStruct from '../helpers/momentFromStruct';
 import chronoDateStructFromMoment from '../helpers/chronoDateStructFromMoment';
 import truncateDateStruct from '../helpers/truncateDateStruct';
+import offsetTimezoneForJSDate from '../helpers/offsetTimezoneForJSDate';
 
-const parser = new Chrono.Parser();
+const parser = {};
 
 parser.pattern = () => {
   return new RegExp('(today|yesterday|tomorrow)', 'i');
 };
 
 /**
- * @param {String} text
- * @param {Date} ref
+ * @param {Chrono.ParsingContext} context
  * @param {Array} match
  */
-parser.extract = (text, ref, match, opt) => {
+parser.extract = (context, match) => {
   const date = match[1].toLowerCase();
   let value = 0;
   if (date === 'yesterday') {
@@ -24,20 +23,20 @@ parser.extract = (text, ref, match, opt) => {
     value = 1;
   }
 
-  const refDateStruct = truncateDateStruct(dateStructFromDate(ref), 'day');
-  let startMoment = momentFromStruct(refDateStruct, { weekStartDay: opt.weekStartDay });
+  const offsetRef = offsetTimezoneForJSDate(context.reference.instant, context.option.timezone);
+
+  const refDateStruct = truncateDateStruct(dateStructFromDate(offsetRef), 'day');
+  let startMoment = momentFromStruct(refDateStruct, { weekStartDay: context.option.weekStartDay });
   startMoment = startMoment.add(value, 'day');
 
   const endMoment = startMoment.add(1, 'day');
 
-  return new Chrono.ParsedResult({
-    ref,
-    text: match[0],
-    index: match.index,
-    tags: { todayParser: true },
-    start: chronoDateStructFromMoment(startMoment),
-    end: chronoDateStructFromMoment(endMoment),
-  });
+  return context.createParsingResult(
+    match.index,
+    match[0],
+    chronoDateStructFromMoment(startMoment),
+    chronoDateStructFromMoment(endMoment),
+  );
 };
 
 export default parser;
